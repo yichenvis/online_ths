@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const port = 3001;
+const port = 3000;
 
 // 设置文件上传
 const upload = multer({ dest: 'uploads/' });
