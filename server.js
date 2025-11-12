@@ -356,7 +356,7 @@ function splitIntoPagesByCategoryPriority(data, categoryCol, maxConstraint = 33)
 function getCategoryStats(data) {
   const categoryCounts = {};
   data.forEach(row => {
-    const category = row['涨停原因'];
+    const category = row['涨停原因1'];
     categoryCounts[category] = (categoryCounts[category] || 0) + 1;
   });
   
