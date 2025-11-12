@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>涨停复盘数据处理</title>
+    <!-- 从本地静态文件加载库 -->
+    <script src="static/xlsx.full.min.js"></script>
+    <script src="static/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px 0;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: var(--dark-color);
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: var(--secondary-color);
+            font-size: 1.1em;
+        }
+        
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card-title {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary-color);
+            background-color: rgba(0, 123, 255, 0.05);
+        }
+        
+        .upload-icon {
+            font-size: 48px;
+            color: var(--secondary-color);
+            margin-bottom: 15px;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .btn {
+            display: inline-block;
+            font-weight: 400;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            border: 1px solid transparent;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .file-info {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: var(--light-color);
+            border-radius: 4px;
+        }
+        
+        #constraintControl {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: var(--light-color);
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        #maxConstraint {
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: white;
+            min-width: 60px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .processing {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid var(--primary-color);
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .results-section {
+            margin-top: 30px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background-color: var(--light-color);
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .stat-label {
+            color: var(--secondary-color);
+            margin-top: 5px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: var(--light-color);
+            font-weight: bold;
+        }
+        
+        tr:nth-child(even) {
+            background-color: var(--light-color);
+        }
+        
+        .page-preview {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        
+        .export-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        
+        .tabs .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        
+        .tabs .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .tab-contents .tab-content {
+            display: none;
+        }
+        
+        .tab-contents .tab-content.active {
+            display: block;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            color: var(--secondary-color);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>涨停复盘数据处理</h1>
+            <p class="subtitle">上传Excel文件进行数据处理，包括清理、排序、分页等功能</p>
+        </header>
+        
+        <main>
+            <div class="card">
+                <h2 class="card-title">文件上传</h2>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>拖拽Excel文件到此处或点击选择文件</p>
+                    <p class="subtitle">支持 .xlsx 和 .xls 格式</p>
+                    <input type="file" id="fileInput" class="file-input" accept=".xlsx,.xls">
+                </div>
+                
+                <div id="fileInfo" class="file-info hidden"></div>
+                
+                <div id="constraintControl" class="hidden" style="margin: 15px 0; text-align: center;">
+                    <label for="maxConstraint">分页约束值: </label>
+                    <select id="maxConstraint" style="padding: 5px; margin-left: 10px; min-width: 60px;">
+                        <!-- 选项将通过JavaScript动态生成 -->
+                    </select>
+                    <span id="constraintInfo" style="margin-left: 10px; cursor: help; color: #007bff; font-size: 18px;" title="什么是约束值
+约束值确定每页最多显示的记录数，超过就会进行跨页
+
+每页的记录数不是固定的，而是根据以下因素动态确定：
+涨停原因类别的数量，每个类别的记录数量
+
+需要满足原因数量 * 2+ 记录数量 * 1 < = 33
+
+例如：
+如果一页只有1个类别，可能包含最多31条记录（1*2 + 31 = 33）
+如果一页有10个类别，可能包含最多13条记录（10*2 + 13 = 33）">❓</span>
+                </div>
+                
+                <div style="text-align: center;">
+                    <button id="processBtn" class="btn btn-primary" disabled>处理文件</button>
+                    <button id="resetBtn" class="btn btn-secondary hidden">重新选择</button>
+                </div>
+            </div>
+            
+            <div id="processingSection" class="card hidden">
+                <div class="processing">
+                    <div class="spinner"></div>
+                    <h3>正在处理文件...</h3>
+                    <p>请稍候，正在分析和处理您的数据</p>
+                </div>
+            </div>
+            
+            <div id="resultsSection" class="card hidden">
+                <h2 class="card-title">处理结果</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="recordCount">0</div>
+                        <div class="stat-label">总记录数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="pageCount">0</div>
+                        <div class="stat-label">生成页数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="categoryCount">0</div>
+                        <div class="stat-label">涨停原因类别</div>
+                    </div>
+                </div>
+                
+                <!-- 主标签页 -->
+                <div class="tabs">
+                    <div class="tab active" data-tab="main-overview">处理概览</div>
+                    <div class="tab" data-tab="main-columns">列信息</div>
+                    <div class="tab" data-tab="main-pages">分页结果</div>
+                    <div class="tab" data-tab="main-categories">类别统计</div>
+                </div>
+                
+                <div class="tab-content active" id="main-overviewTab">
+                    <h3>处理概览</h3>
+                    <table>
+                        <tr>
+                            <th>处理步骤</th>
+                            <th>状态</th>
+                        </tr>
+                        <tr>
+                            <td>清理日期字段</td>
+                            <td>✅ 完成</td>
+                        </tr>
+                        <tr>
+                            <td>识别必要列</td>
+                            <td>✅ 完成</td>
+                        </tr>
+                        <tr>
+                            <td>处理涨停原因类别字段</td>
+                            <td>✅ 完成</td>
+                        </tr>
+                        <tr>
+                            <td>数据排序</td>
+                            <td>✅ 完成</td>
+                        </tr>
+                        <tr>
+                            <td>分页处理</td>
+                            <td>✅ 完成</td>
+                        </tr>
+                    </table>
+                </div>
+                
+                <div class="tab-content" id="main-columnsTab">
+                    <h3>列信息</h3>
+                    <table id="columnsTable">
+                        <thead>
+                            <tr>
+                                <th>识别项</th>
+                                <th>列名</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>最终涨停时间</td>
+                                <td id="finalLimitTimeCol">-</td>
+                            </tr>
+                            <tr>
+                                <td>连续涨停天数(天)</td>
+                                <td id="continuousLimitDaysCol">-</td>
+                            </tr>
+                            <tr>
+                                <td>涨停原因</td>
+                                <td id="limitReasonCol">-</td>
+                            </tr>
+                            <tr>
+                                <td>涨停原因类别</td>
+                                <td id="limitReasonCategoryCol">-</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="tab-content" id="main-pagesTab">
+                    <h3>分页结果</h3>
+                    <div id="pagesContainer"></div>
+                </div>
+                
+                <div class="tab-content" id="main-categoriesTab">
+                    <h3>涨停原因统计</h3>
+                    <div class="page-preview">
+                        <table id="categoriesTable">
+                            <thead>
+                                <tr>
+                                    <th>涨停原因</th>
+                                    <th>出现次数</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="export-section">
+                    <div id="reprocessControl" style="margin-bottom: 15px; padding: 10px; background-color: var(--light-color); border-radius: 4px;">
+                        <label for="resultMaxConstraint">分页约束值: </label>
+                        <select id="resultMaxConstraint" style="padding: 5px 10px; margin: 0 10px; min-width: 60px;"></select>
+                        <span id="resultConstraintInfo" style="margin-left: 10px; cursor: help; color: #007bff; font-size: 18px;" title="什么是约束值
+约束值确定每页最多显示的记录数，超过就会进行跨页
+
+每页的记录数不是固定的，而是根据以下因素动态确定：
+涨停原因类别的数量，每个类别的记录数量
+
+需要满足原因数量 * 2+ 记录数量 * 1 < = 33
+
+例如：
+如果一页只有1个类别，可能包含最多31条记录（1*2 + 31 = 33）
+如果一页有10个类别，可能包含最多13条记录（10*2 + 13 = 33）">❓</span>
+                        <button id="reprocessBtn" class="btn btn-secondary">重新处理</button>
+                    </div>
+                    <button id="exportAllBtn" class="btn btn-primary">导出所有分页文件</button>
+                    <button id="exportCsvBtn" class="btn btn-secondary">导出统计CSV</button>
+                </div>
+            </div>
+            
+            <div id="errorSection" class="card hidden">
+                <div class="alert alert-error">
+                    <h3>处理出错</h3>
+                    <p id="errorMessage"></p>
+                </div>
+                <div style="text-align: center;">
+                    <button id="retryBtn" class="btn btn-primary">重新选择文件</button>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>涨停复盘数据处理 &copy; 2025</p>
+        </footer>
+    </div>
+
+    <script>
+        // 全局变量
+        var processedData = null;
+        var pages = [];
+        var categoryStats = [];
+        var baseFileName = ''; // 保存基础文件名
+        var maxConstraint = 33; // 默认约束值
+        
+        // DOM元素
+        var uploadArea = document.getElementById('uploadArea');
+        var fileInput = document.getElementById('fileInput');
+        var fileInfo = document.getElementById('fileInfo');
+        var processBtn = document.getElementById('processBtn');
+        var resetBtn = document.getElementById('resetBtn');
+        var processingSection = document.getElementById('processingSection');
+        var resultsSection = document.getElementById('resultsSection');
+        var errorSection = document.getElementById('errorSection');
+        var errorMessage = document.getElementById('errorMessage');
+        var retryBtn = document.getElementById('retryBtn');
+        
+        // 事件监听器
+        uploadArea.addEventListener('click', function() { fileInput.click(); });
+        
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', function() {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            if (e.dataTransfer.files.length) {
+                handleFileSelection(e.dataTransfer.files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', function() {
+            if (fileInput.files.length) {
+                handleFileSelection(fileInput.files[0]);
+            }
+        });
+        
+        processBtn.addEventListener('click', processFile);
+        resetBtn.addEventListener('click', resetApp);
+        retryBtn.addEventListener('click', resetApp);
+        
+        // 主标签页切换功能
+        var mainTabs = document.querySelectorAll('.tab[data-tab^="main-"]');
+        for (var i = 0; i < mainTabs.length; i++) {
+            mainTabs[i].addEventListener('click', function() {
+                // 移除所有活动状态
+                var allMainTabs = document.querySelectorAll('.tab[data-tab^="main-"]');
+                var allMainContents = document.querySelectorAll('.tab-content[id^="main-"]');
+                
+                for (var j = 0; j < allMainTabs.length; j++) {
+                    allMainTabs[j].classList.remove('active');
+                }
+                
+                for (var k = 0; k < allMainContents.length; k++) {
+                    allMainContents[k].classList.remove('active');
+                }
+                
+                // 添加当前活动状态
+                this.classList.add('active');
+                var tabId = this.getAttribute('data-tab');
+                document.getElementById(tabId + 'Tab').classList.add('active');
+            });
+        }
+        
+        // 导出按钮事件
+        document.getElementById('exportAllBtn').addEventListener('click', exportAllPages);
+        document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+        
+        // 重新处理按钮事件
+        document.getElementById('reprocessBtn').addEventListener('click', reprocessData);
+        
+        // 处理文件选择
+        function handleFileSelection(file) {
+            if (!file.name.match(/\.(xlsx|xls)$/i)) {
+                showError('请选择有效的Excel文件 (.xlsx 或 .xls)');
+                return;
+            }
+            
+            // 保存基础文件名（去掉扩展名）
+            baseFileName = file.name.replace(/\.[^.]*$/, '');
+            
+            fileInfo.textContent = '已选择: ' + file.name + ' (' + (file.size / 1024).toFixed(2) + ' KB)';
+            fileInfo.classList.remove('hidden');
+            
+            // 显示约束值控制
+            var constraintControl = document.getElementById('constraintControl');
+            constraintControl.classList.remove('hidden');
+            
+            // 生成下拉选项
+            var maxConstraintSelect = document.getElementById('maxConstraint');
+            maxConstraintSelect.innerHTML = '';
+            for (var i = 25; i <= 33; i++) {
+                var option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (i === 33) {
+                    option.selected = true; // 默认选择33
+                }
+                maxConstraintSelect.appendChild(option);
+            }
+            
+            processBtn.disabled = false;
+            resetBtn.classList.remove('hidden');
+        }
+        
+        // 处理文件
+        function processFile() {
+            if (!fileInput.files.length) return;
+            
+            var file = fileInput.files[0];
+            
+            // 获取用户选择的约束值
+            maxConstraint = parseInt(document.getElementById('maxConstraint').value);
+            
+            var reader = new FileReader();
+            
+            // 显示处理中界面
+            document.querySelector('.card:first-child').classList.add('hidden');
+            processingSection.classList.remove('hidden');
+            
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // 读取第一个工作表
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // 转换为JSON
+                    var jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                    
+                    // 处理数据
+                    processData(jsonData);
+                    
+                    // 显示结果
+                    showResults();
+                } catch (error) {
+                    showError('处理文件时出错: ' + error.message);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('读取文件时出错');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+        
+        // 数据处理主函数
+        function processData(data) {
+            if (!data || data.length === 0) {
+                throw new Error('文件中没有数据');
+            }
+            
+            // 1. 清理日期字段
+            processedData = cleanDateFields(data);
+            
+            // 2. 查找必要的列
+            var finalLimitTimeCol = findColumn(processedData, '最终涨停时间');
+            var continuousLimitDaysCol = findColumn(processedData, '连续涨停天数(天)');
+            var limitReasonCol = findColumn(processedData, '涨停原因');
+            var limitReasonCategoryCol = findColumn(processedData, '涨停原因类别');
+            
+            if (!finalLimitTimeCol || !continuousLimitDaysCol || !limitReasonCol || !limitReasonCategoryCol) {
+                throw new Error('缺少必要列，请检查文件格式');
+            }
+            
+            // 保存列信息用于显示
+            window.columnInfo = {
+                finalLimitTimeCol: finalLimitTimeCol,
+                continuousLimitDaysCol: continuousLimitDaysCol,
+                limitReasonCol: limitReasonCol,
+                limitReasonCategoryCol: limitReasonCategoryCol
+            };
+            
+            // 3. 重命名列以便后续处理（避免字段重复）
+            var renamedData = [];
+            for (var i = 0; i < processedData.length; i++) {
+                var row = processedData[i];
+                // 创建新的对象，只包含我们需要的字段
+                var newRow = {};
+                
+                // 复制必要的字段
+                for (var key in row) {
+                    if (row.hasOwnProperty(key)) {
+                        // 跳过我们即将重命名的字段，避免重复
+                        // 同时移除'涨停原因揭秘'字段（支持模糊匹配）
+                        if (key !== finalLimitTimeCol && 
+                            key !== continuousLimitDaysCol && 
+                            key !== limitReasonCol && 
+                            key !== limitReasonCategoryCol &&
+                            key.indexOf('涨停原因揭秘') === -1) {
+                            newRow[key] = row[key];
+                        }
+                    }
+                }
+                
+                // 添加重命名后的字段
+                newRow['最终涨停时间'] = row[finalLimitTimeCol];
+                newRow['连续涨停天数(天)'] = row[continuousLimitDaysCol];
+                newRow['涨停原因'] = row[limitReasonCol];
+                newRow['涨停原因类别'] = row[limitReasonCategoryCol];
+                
+                renamedData.push(newRow);
+            }
+            
+            processedData = renamedData;
+            
+            // 4. 处理涨停原因类别字段
+            processedData = processReasonCategoryField(processedData);
+            
+            // 5. 按规则排序
+            processedData = sortData(processedData);
+            
+            // 6. 分页处理
+            pages = splitIntoPagesByCategoryPriority(processedData, '涨停原因', maxConstraint);
+            
+            // 7. 统计类别
+            categoryStats = getCategoryStats(processedData);
+        }
+        
+        // 清理包含日期的字段名
+        function cleanDateFields(data) {
+            if (data.length === 0) return data;
+            
+            var cleanedData = [];
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var newRow = {};
+                for (var col in row) {
+                    if (row.hasOwnProperty(col)) {
+                        // 匹配类似 "字段名YYYY.MM.DD" 的模式
+                        var cleanedCol = col.replace(/\d{4}\.\d{2}\.\d{2}$/, '');
+                        newRow[cleanedCol] = row[col];
+                    }
+                }
+                cleanedData.push(newRow);
+            }
+            return cleanedData;
+        }
+        
+        // 查找列名，支持模糊匹配
+        function findColumn(data, columnName) {
+            if (data.length === 0) return null;
+            
+            var firstRow = data[0];
+            
+            // 精确匹配
+            for (var col in firstRow) {
+                if (firstRow.hasOwnProperty(col)) {
+                    if (col === columnName) {
+                        return col;
+                    }
+                }
+            }
+            
+            // 模糊匹配（去除空格后匹配）
+            for (var col in firstRow) {
+                if (firstRow.hasOwnProperty(col)) {
+                    if (col.trim() === columnName) {
+                        return col;
+                    }
+                }
+            }
+            
+            // 部分匹配
+            for (var col in firstRow) {
+                if (firstRow.hasOwnProperty(col)) {
+                    if (col.indexOf(columnName) !== -1) {
+                        return col;
+                    }
+                }
+            }
+            
+            return null;
+        }
+        
+        // 计算文本长度，中文字符算2个长度，英文、数字和其他字符算1个长度
+        function calculateChineseLength(text) {
+            if (text === null || text === undefined) {
+                return 0;
+            }
+            
+            text = String(text);
+            // 统计中文字符数量
+            var chineseChars = text.match(/[\u4e00-\u9fff]/g) || [];
+            var chineseCount = chineseChars.length;
+            
+            // 总长度 = 中文字符数*2 + 其他字符数(英文、数字、标点等)
+            var totalLength = chineseCount * 2 + (text.length - chineseCount);
+            return totalLength;
+        }
+        
+        // 标准化涨停原因类别字段
+        function normalizeReasonCategory(reasonCategory) {
+            if (reasonCategory === null || reasonCategory === undefined) {
+                return "";
+            }
+            // 去除首尾空格
+            reasonCategory = String(reasonCategory).trim();
+            // 去除多余的空格
+            reasonCategory = reasonCategory.replace(/\s+/g, ' ');
+            return reasonCategory;
+        }
+        
+        // 确保涨停原因类别字段总长度不超过指定字符数
+        function trimReasonCategoryField(reasonCategory, maxLength) {
+            maxLength = maxLength || 36;
+            if (calculateChineseLength(reasonCategory) <= maxLength) {
+                // 即使长度满足要求，也要检查末尾是否是"+"并移除
+                var result = reasonCategory;
+                while (result.length > 0 && result.charAt(result.length - 1) === '+') {
+                    result = result.substring(0, result.length - 1);
+                }
+                return result;
+            }
+            
+            // 从后向前逐步截断直到满足长度要求
+            for (var i = reasonCategory.length; i > 0; i--) {
+                var truncated = reasonCategory.substring(0, i);
+                
+                // 如果截断后长度满足要求
+                if (calculateChineseLength(truncated) <= maxLength) {
+                    // 找到最后一个"+"的位置
+                    var lastPlusIndex = truncated.lastIndexOf('+');
+                    
+                    // 如果存在"+"且不在末尾，则在最后一个"+"处截断
+                    if (lastPlusIndex !== -1 && lastPlusIndex < truncated.length - 1) {
+                        truncated = truncated.substring(0, lastPlusIndex);
+                    }
+                    
+                    // 移除末尾的"+"字符
+                    while (truncated.length > 0 && truncated.charAt(truncated.length - 1) === '+') {
+                        truncated = truncated.substring(0, truncated.length - 1);
+                    }
+                    
+                    return truncated;
+                }
+            }
+            
+            // 如果单个字符就超长了，返回空字符串
+            return "";
+        }
+        
+        // 处理涨停原因类别字段
+        function processReasonCategoryField(data) {
+            var result = [];
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var newRow = {};
+                for (var key in row) {
+                    if (row.hasOwnProperty(key)) {
+                        newRow[key] = row[key];
+                    }
+                }
+                
+                try {
+                    var normalized = normalizeReasonCategory(newRow['涨停原因类别']);
+                    newRow['涨停原因类别'] = trimReasonCategoryField(normalized);
+                } catch (error) {
+                    console.error("处理涨停原因类别字段时出错:", error);
+                    newRow['涨停原因类别'] = "";
+                }
+                result.push(newRow);
+            }
+            return result;
+        }
+        
+        // 排序数据
+        function sortData(data) {
+            var result = [];
+            for (var i = 0; i < data.length; i++) {
+                result.push(data[i]);
+            }
+            
+            result.sort(function(a, b) {
+                // 首先按连续涨停天数(天)降序排序（天数多的在前）
+                var daysDiff = b['连续涨停天数(天)'] - a['连续涨停天数(天)'];
+                if (daysDiff !== 0) {
+                    return daysDiff;
+                }
+                
+                // 然后按最终涨停时间升序排序（时间早的在前）
+                if (a['最终涨停时间'] < b['最终涨停时间']) return -1;
+                if (a['最终涨停时间'] > b['最终涨停时间']) return 1;
+                return 0;
+            });
+            
+            return result;
+        }
+        
+        // 根据分类数和条目数的关系进行分页
+        function splitIntoPagesByCategoryPriority(data, categoryCol, maxConstraintValue) {
+            // 使用传入的约束值或全局约束值
+            var maxConstraint = maxConstraintValue !== null ? maxConstraintValue : maxConstraint;
+            
+            // 统计各类别的出现次数
+            var categoryCounts = {};
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var category = row[categoryCol];
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+            }
+            
+            // 按出现次数降序排列，但将"其他概念"放在最后
+            var sortedEntries = [];
+            for (var cat in categoryCounts) {
+                if (categoryCounts.hasOwnProperty(cat) && cat !== "其他概念") {
+                    sortedEntries.push([cat, categoryCounts[cat]]);
+                }
+            }
+            
+            sortedEntries.sort(function(a, b) {
+                return b[1] - a[1];
+            });
+            
+            var sortedCategories = [];
+            for (var i = 0; i < sortedEntries.length; i++) {
+                sortedCategories.push(sortedEntries[i][0]);
+            }
+            
+            if (categoryCounts["其他概念"]) {
+                sortedCategories.push("其他概念");
+            }
+            
+            // 按照类别优先级重新排列数据
+            var reorderedData = [];
+            var otherConceptData = [];
+            
+            for (var i = 0; i < sortedCategories.length; i++) {
+                var cat = sortedCategories[i];
+                var catData = [];
+                for (var j = 0; j < data.length; j++) {
+                    if (data[j][categoryCol] === cat) {
+                        catData.push(data[j]);
+                    }
+                }
+                
+                if (cat === "其他概念") {
+                    for (var k = 0; k < catData.length; k++) {
+                        otherConceptData.push(catData[k]);
+                    }
+                } else {
+                    for (var k = 0; k < catData.length; k++) {
+                        reorderedData.push(catData[k]);
+                    }
+                }
+            }
+            
+            for (var i = 0; i < otherConceptData.length; i++) {
+                reorderedData.push(otherConceptData[i]);
+            }
+            
+            // 按约束条件进行分页
+            var pages = [];
+            var i = 0;
+            
+            while (i < reorderedData.length) {
+                var j = i;
+                var categoryCount = 0;
+                var itemCount = 0;
+                var categories = {};
+                
+                while (j < reorderedData.length) {
+                    var currentCategory = reorderedData[j][categoryCol];
+                    if (!categories.hasOwnProperty(currentCategory)) {
+                        categories[currentCategory] = true;
+                        categoryCount++;
+                    }
+                    
+                    itemCount++;
+                    
+                    // 检查是否满足约束条件
+                    if (categoryCount * 2 + itemCount > maxConstraint) {
+                        // 如果加入这条记录会超出限制，则不包含这条记录
+                        break;
+                    }
+                    
+                    j++;
+                }
+                
+                // 如果没有满足条件的记录（可能第一条就不满足），至少保留一条
+                if (j === i) {
+                    j = i + 1;
+                }
+                
+                var page = [];
+                for (var k = i; k < j; k++) {
+                    page.push(reorderedData[k]);
+                }
+                pages.push(page);
+                i = j;
+            }
+            
+            return pages;
+        }
+        
+        // 获取类别统计数据
+        function getCategoryStats(data) {
+            var categoryCounts = {};
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var category = row['涨停原因'];
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+            }
+            
+            var entries = [];
+            for (var cat in categoryCounts) {
+                if (categoryCounts.hasOwnProperty(cat)) {
+                    entries.push([cat, categoryCounts[cat]]);
+                }
+            }
+            
+            entries.sort(function(a, b) {
+                return b[1] - a[1];
+            });
+            
+            var result = [];
+            for (var i = 0; i < entries.length; i++) {
+                result.push({
+                    category: entries[i][0],
+                    count: entries[i][1]
+                });
+            }
+            
+            return result;
+        }
+        
+        // 显示结果
+        function showResults() {
+            // 隐藏处理中界面，显示结果界面
+            processingSection.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+            
+            // 更新统计信息
+            document.getElementById('recordCount').textContent = processedData.length;
+            document.getElementById('pageCount').textContent = pages.length;
+            document.getElementById('categoryCount').textContent = categoryStats.length;
+            
+            // 更新列信息
+            document.getElementById('finalLimitTimeCol').textContent = window.columnInfo.finalLimitTimeCol;
+            document.getElementById('continuousLimitDaysCol').textContent = window.columnInfo.continuousLimitDaysCol;
+            document.getElementById('limitReasonCol').textContent = window.columnInfo.limitReasonCol;
+            document.getElementById('limitReasonCategoryCol').textContent = window.columnInfo.limitReasonCategoryCol;
+            
+            // 初始化重新处理控件
+            initReprocessControl();
+            
+            // 定义预览时需要显示的字段（使用模糊匹配应对编码问题）
+            var previewFields = ['股票简称', '最终涨停时间', '连续涨停天数(天)', '涨停原因', '涨停原因类别'];
+            
+            // 检查字段是否匹配预览字段
+            function isPreviewField(fieldName) {
+                // 使用模糊匹配应对可能的编码问题
+                for (var i = 0; i < previewFields.length; i++) {
+                    var field = previewFields[i];
+                    if (fieldName.indexOf(field) !== -1 || field.indexOf(fieldName) !== -1) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            // 创建标签页容器
+            var tabsContainer = document.createElement('div');
+            tabsContainer.className = 'tabs';
+            
+            // 创建标签内容容器
+            var tabContentsContainer = document.createElement('div');
+            tabContentsContainer.className = 'tab-contents';
+            
+            for (var index = 0; index < pages.length; index++) {
+                var page = pages[index];
+                // 创建标签按钮
+                var tabButton = document.createElement('div');
+                tabButton.className = 'tab' + (index === 0 ? ' active' : '');
+                tabButton.textContent = '第' + (index + 1) + '页';
+                tabButton.setAttribute('data-tab', 'page-' + index);
+                tabsContainer.appendChild(tabButton);
+                
+                // 创建标签内容
+                var tabContent = document.createElement('div');
+                tabContent.className = 'tab-content' + (index === 0 ? ' active' : '');
+                tabContent.id = 'page-' + index;
+                
+                // 构建表头
+                var headerKeys = [];
+                if (page.length > 0) {
+                    for (var key in page[0]) {
+                        if (page[0].hasOwnProperty(key)) {
+                            if (key.indexOf('涨停原因揭秘') === -1 && isPreviewField(key)) {
+                                headerKeys.push(key);
+                            }
+                        }
+                    }
+                }
+                
+                var tableHeaderHtml = '';
+                for (var h = 0; h < headerKeys.length; h++) {
+                    tableHeaderHtml += '<th>' + headerKeys[h] + '</th>';
+                }
+                
+                // 构建表体
+                var tableBodyHtml = '';
+                for (var r = 0; r < page.length; r++) {
+                    var row = page[r];
+                    var rowHtml = '<tr>';
+                    
+                    for (var c = 0; c < headerKeys.length; c++) {
+                        var key = headerKeys[c];
+                        rowHtml += '<td>' + (row[key] || '') + '</td>';
+                    }
+                    rowHtml += '</tr>';
+                    tableBodyHtml += rowHtml;
+                }
+                
+                tabContent.innerHTML = 
+                    '<h3>第 ' + (index + 1) + ' 页</h3>' +
+                    '<p>记录数: ' + page.length + '</p>' +
+                    '<div class="page-preview">' +
+                        '<table>' +
+                            '<thead>' +
+                                '<tr>' + tableHeaderHtml + '</tr>' +
+                            '</thead>' +
+                            '<tbody>' + tableBodyHtml + '</tbody>' +
+                        '</table>' +
+                    '</div>';
+                tabContentsContainer.appendChild(tabContent);
+            }
+            
+            // 将标签页和内容添加到页面中
+            var pagesContainer = document.getElementById('pagesContainer');
+            pagesContainer.innerHTML = '';
+            pagesContainer.appendChild(tabsContainer);
+            pagesContainer.appendChild(tabContentsContainer);
+            
+            // 添加标签页切换功能
+            var tabElements = tabsContainer.querySelectorAll('.tab');
+            for (var t = 0; t < tabElements.length; t++) {
+                tabElements[t].addEventListener('click', function() {
+                    // 移除所有活动状态
+                    var allTabElements = tabsContainer.querySelectorAll('.tab');
+                    var allTabContents = tabContentsContainer.querySelectorAll('.tab-content');
+                    
+                    for (var at = 0; at < allTabElements.length; at++) {
+                        allTabElements[at].classList.remove('active');
+                    }
+                    
+                    for (var ac = 0; ac < allTabContents.length; ac++) {
+                        allTabContents[ac].classList.remove('active');
+                    }
+                    
+                    // 添加当前活动状态
+                    this.classList.add('active');
+                    var tabId = this.getAttribute('data-tab');
+                    var contentElement = tabContentsContainer.querySelector('#' + tabId);
+                    if (contentElement) {
+                        contentElement.classList.add('active');
+                    }
+                });
+            }
+            
+            // 更新类别统计
+            var categoriesTableBody = document.querySelector('#categoriesTable tbody');
+            categoriesTableBody.innerHTML = '';
+            
+            for (var s = 0; s < categoryStats.length; s++) {
+                var stat = categoryStats[s];
+                var row = document.createElement('tr');
+                row.innerHTML = 
+                    '<td>' + stat.category + '</td>' +
+                    '<td>' + stat.count + '</td>';
+                categoriesTableBody.appendChild(row);
+            }
+            
+            // 默认显示分页结果标签页（根据规范）
+            var allMainTabs = document.querySelectorAll('.tab[data-tab^="main-"]');
+            var allMainContents = document.querySelectorAll('.tab-content[id^="main-"]');
+            
+            for (var i = 0; i < allMainTabs.length; i++) {
+                allMainTabs[i].classList.remove('active');
+            }
+            
+            for (var j = 0; j < allMainContents.length; j++) {
+                allMainContents[j].classList.remove('active');
+            }
+            
+            document.querySelector('.tab[data-tab="main-pages"]').classList.add('active');
+            document.getElementById('main-pagesTab').classList.add('active');
+        }
+        
+        // 导出所有分页文件
+        function exportAllPages() {
+            for (var index = 0; index < pages.length; index++) {
+                var page = pages[index];
+                // 过滤掉'涨停原因揭秘'字段（支持模糊匹配）
+                var filteredPage = [];
+                for (var i = 0; i < page.length; i++) {
+                    var row = page[i];
+                    var filteredRow = {};
+                    for (var key in row) {
+                        if (row.hasOwnProperty(key)) {
+                            if (key.indexOf('涨停原因揭秘') === -1) {
+                                filteredRow[key] = row[key];
+                            }
+                        }
+                    }
+                    filteredPage.push(filteredRow);
+                }
+                
+                var worksheet = XLSX.utils.json_to_sheet(filteredPage);
+                var workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, '第1页');
+                
+                // 导出文件，使用基于原始文件名的格式
+                XLSX.writeFile(workbook, baseFileName + '_第' + (index + 1) + '页.xlsx');
+            }
+        }
+        
+        // 导出CSV统计文件
+        function exportCsv() {
+            var csvContent = [
+                ['涨停原因', '出现次数']
+            ];
+            
+            for (var i = 0; i < categoryStats.length; i++) {
+                var stat = categoryStats[i];
+                csvContent.push([stat.category, stat.count]);
+            }
+            
+            var csvString = '';
+            for (var j = 0; j < csvContent.length; j++) {
+                csvString += csvContent[j].join(',') + '\n';
+            }
+            
+            var blob = new Blob(['\ufeff' + csvString], { type: 'text/csv;charset=utf-8;' });
+            saveAs(blob, '涨停原因统计.csv');
+        }
+        
+        // 显示错误信息
+        function showError(message) {
+            processingSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+            errorMessage.textContent = message;
+        }
+        
+        // 重置应用
+        function resetApp() {
+            // 重置文件输入
+            fileInput.value = '';
+            
+            // 重置界面
+            document.querySelector('.card:first-child').classList.remove('hidden');
+            processingSection.classList.add('hidden');
+            resultsSection.classList.add('hidden');
+            errorSection.classList.add('hidden');
+            
+            // 重置状态
+            fileInfo.classList.add('hidden');
+            fileInfo.textContent = '';
+            document.getElementById('constraintControl').classList.add('hidden');
+            processBtn.disabled = true;
+            resetBtn.classList.add('hidden');
+            
+            // 重置数据
+            processedData = null;
+            pages = [];
+            categoryStats = [];
+            maxConstraint = 33; // 重置为默认值
+        }
+        
+        // 初始化重新处理控件
+        function initReprocessControl() {
+            var resultMaxConstraintSelect = document.getElementById('resultMaxConstraint');
+            resultMaxConstraintSelect.innerHTML = '';
+            
+            // 生成下拉选项
+            for (var i = 25; i <= 33; i++) {
+                var option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (i === maxConstraint) {
+                    option.selected = true; // 选择当前使用的约束值
+                }
+                resultMaxConstraintSelect.appendChild(option);
+            }
+        }
+        
+        // 重新处理数据
+        function reprocessData() {
+            // 获取新的约束值
+            var newMaxConstraint = parseInt(document.getElementById('resultMaxConstraint').value);
+            
+            // 如果约束值没有改变，则不重新处理
+            if (newMaxConstraint === maxConstraint) {
+                return;
+            }
+            
+            // 更新约束值
+            maxConstraint = newMaxConstraint;
+            
+            // 显示处理中界面
+            processingSection.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+            
+            // 使用setTimeout确保UI更新后再进行处理
+            setTimeout(function() {
+                try {
+                    // 重新分页处理
+                    pages = splitIntoPagesByCategoryPriority(processedData, '涨停原因', maxConstraint);
+                    
+                    // 重新统计类别
+                    categoryStats = getCategoryStats(processedData);
+                    
+                    // 显示结果
+                    showResults();
+                } catch (error) {
+                    showError('重新处理时出错: ' + error.message);
+                }
+            }, 100);
+        }
+    </script>
+</body>
+</html>
