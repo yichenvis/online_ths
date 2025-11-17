@@ -517,6 +517,8 @@
         var categoryStats = [];
         var baseFileName = ''; // 保存基础文件名
         var maxConstraint = 33; // 默认约束值
+        // 保存页面修改的数据结构
+        window.pageModifications = {};
         
         // DOM元素
         var uploadArea = document.getElementById('uploadArea');
@@ -1131,7 +1133,8 @@
                     
                     for (var c = 0; c < headerKeys.length; c++) {
                         var key = headerKeys[c];
-                        rowHtml += '<td>' + (row[key] || '') + '</td>';
+                        // 为每个单元格创建可编辑的输入框
+                        rowHtml += '<td><input type="text" value="' + (row[key] || '') + '" data-row="' + r + '" data-col="' + key + '" style="width:100%;box-sizing:border-box;"></td>';
                     }
                     rowHtml += '</tr>';
                     tableBodyHtml += rowHtml;
@@ -1147,6 +1150,9 @@
                             '</thead>' +
                             '<tbody>' + tableBodyHtml + '</tbody>' +
                         '</table>' +
+                    '</div>' +
+                    '<div style="margin-top: 10px;">' +
+                        '<button onclick="savePageChanges(' + index + ')" class="btn btn-primary">保存此页修改</button>' +
                     '</div>';
                 tabContentsContainer.appendChild(tabContent);
             }
@@ -1212,10 +1218,57 @@
             document.getElementById('main-pagesTab').classList.add('active');
         }
         
+        // 保存页面修改的函数
+        function savePageChanges(pageIndex) {
+            // 获取当前页面的所有输入框
+            var tabContent = document.getElementById('page-' + pageIndex);
+            var inputs = tabContent.querySelectorAll('input[type="text"]');
+            
+            // 初始化该页的修改记录
+            window.pageModifications[pageIndex] = {};
+            
+            // 收集所有修改
+            for (var i = 0; i < inputs.length; i++) {
+                var input = inputs[i];
+                var row = input.getAttribute('data-row');
+                var col = input.getAttribute('data-col');
+                var newValue = input.value;
+                
+                // 保存修改到全局变量
+                var key = row + '|' + col;
+                window.pageModifications[pageIndex][key] = newValue;
+            }
+            
+            // 显示保存成功的提示
+            alert('第' + (pageIndex + 1) + '页修改已保存！');
+        }
+        
         // 导出所有分页文件
         function exportAllPages() {
-            for (var index = 0; index < pages.length; index++) {
-                var page = pages[index];
+            // 创建修改后的页面数据副本
+            var modifiedPages = JSON.parse(JSON.stringify(pages));
+            
+            // 应用所有保存的修改
+            if (window.pageModifications) {
+                for (var pageIndex in window.pageModifications) {
+                    var modifications = window.pageModifications[pageIndex];
+                    for (var rowColKey in modifications) {
+                        var parts = rowColKey.split('|');
+                        var rowIndex = parseInt(parts[0]);
+                        var colName = parts[1];
+                        var newValue = modifications[rowColKey];
+                        
+                        if (modifiedPages[pageIndex] && 
+                            modifiedPages[pageIndex][rowIndex] && 
+                            modifiedPages[pageIndex][rowIndex].hasOwnProperty(colName)) {
+                            modifiedPages[pageIndex][rowIndex][colName] = newValue;
+                        }
+                    }
+                }
+            }
+            
+            for (var index = 0; index < modifiedPages.length; index++) {
+                var page = modifiedPages[index];
                 // 过滤掉'涨停原因揭秘'字段（支持模糊匹配）
                 var filteredPage = [];
                 for (var i = 0; i < page.length; i++) {
