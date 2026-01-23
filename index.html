@@ -127,6 +127,24 @@
             background-color: #545b62;
         }
         
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        
+        .btn-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+        
         .btn:disabled {
             background-color: #ccc;
             cursor: not-allowed;
@@ -185,7 +203,7 @@
         
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -313,6 +331,14 @@
             color: var(--secondary-color);
             font-size: 0.9em;
         }
+        
+        .merge-section {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
     </style>
 </head>
 <body>
@@ -349,7 +375,19 @@
 
 例如：
 如果一页只有1个类别，可能包含最多31条记录（1*2 + 31 = 33）
-如果一页有10个类别，可能包含最多13条记录（10*2 + 13 = 33）">❓</span>
+如果一页有10个类别，可能包含最多13条记录（10*2 + 13 = 33">❓</span>
+                </div>
+                
+                <!-- 新增合并子表功能 -->
+                <div class="merge-section" id="mergeSection" style="display:none;">
+                    <h3>合并子表功能</h3>
+                    <div class="upload-area" id="subTableUploadArea">
+                        <div class="upload-icon">🔗</div>
+                        <p>上传子表用于数据合并（可选）</p>
+                        <p class="subtitle">支持 .xlsx 和 .xls 格式，需包含code、gtime、value三列</p>
+                        <input type="file" id="subTableFileInput" class="file-input" accept=".xlsx,.xls">
+                    </div>
+                    <div id="subTableFileInfo" class="file-info hidden"></div>
                 </div>
                 
                 <div style="text-align: center;">
@@ -369,7 +407,7 @@
             <div id="resultsSection" class="card hidden">
                 <h2 class="card-title">处理结果</h2>
                 
-                <div class="stats-grid">
+                <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
                     <div class="stat-card">
                         <div class="stat-number" id="recordCount">0</div>
                         <div class="stat-label">总记录数</div>
@@ -382,6 +420,10 @@
                         <div class="stat-number" id="categoryCount">0</div>
                         <div class="stat-label">涨停原因类别</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="mergedCount">0</div>
+                        <div class="stat-label">合并记录数</div>
+                    </div>
                 </div>
                 
                 <!-- 主标签页 -->
@@ -390,6 +432,7 @@
                     <div class="tab" data-tab="main-columns">列信息</div>
                     <div class="tab" data-tab="main-pages">分页结果</div>
                     <div class="tab" data-tab="main-categories">类别统计</div>
+                    <div class="tab" data-tab="main-merged">合并结果</div>
                 </div>
                 
                 <div class="tab-content active" id="main-overviewTab">
@@ -418,6 +461,10 @@
                         <tr>
                             <td>分页处理</td>
                             <td>✅ 完成</td>
+                        </tr>
+                        <tr>
+                            <td>数据合并处理</td>
+                            <td id="mergeStatus">待处理</td>
                         </tr>
                     </table>
                 </div>
@@ -472,6 +519,18 @@
                     </div>
                 </div>
                 
+                <div class="tab-content" id="main-mergedTab">
+                    <h3>合并后数据预览</h3>
+                    <div class="page-preview">
+                        <table id="mergedDataTable">
+                            <thead>
+                                <tr id="mergedHeader"></tr>
+                            </thead>
+                            <tbody id="mergedDataBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
                 <div class="export-section">
                     <div id="reprocessControl" style="margin-bottom: 15px; padding: 10px; background-color: var(--light-color); border-radius: 4px;">
                         <label for="resultMaxConstraint">分页约束值: </label>
@@ -488,10 +547,13 @@
 如果一页只有1个类别，可能包含最多31条记录（1*2 + 31 = 33）
 如果一页有10个类别，可能包含最多13条记录（10*2 + 13 = 33）">❓</span>
                         <button id="reprocessBtn" class="btn btn-secondary">重新处理</button>
+                        <button id="postMergeBtn" class="btn btn-warning" style="margin-left: 10px;" disabled>上传子表</button>
                     </div>
                     <button id="exportAllBtn" class="btn btn-primary">导出所有分页文件</button>
+                    <button id="exportMergedBtn" class="btn btn-success" disabled>导出合并后文件</button>
                     <button id="exportCsvBtn" class="btn btn-secondary">导出统计CSV</button>
                 </div>
+
             </div>
             
             <div id="errorSection" class="card hidden">
@@ -519,10 +581,17 @@
         var maxConstraint = 33; // 默认约束值
         // 保存页面修改的数据结构
         window.pageModifications = {};
+        // 合并相关的变量
+        var subTableData = null;
+        var mergedData = null;
         
         // DOM元素
         var uploadArea = document.getElementById('uploadArea');
         var fileInput = document.getElementById('fileInput');
+        var subTableUploadArea = document.getElementById('subTableUploadArea');
+        var subTableFileInput = document.getElementById('subTableFileInput');
+        var subTableFileInfo = document.getElementById('subTableFileInfo');
+        var mergeSection = document.getElementById('mergeSection');
         var fileInfo = document.getElementById('fileInfo');
         var processBtn = document.getElementById('processBtn');
         var resetBtn = document.getElementById('resetBtn');
@@ -531,6 +600,10 @@
         var errorSection = document.getElementById('errorSection');
         var errorMessage = document.getElementById('errorMessage');
         var retryBtn = document.getElementById('retryBtn');
+        var reprocessBtn = document.getElementById('reprocessBtn');
+        
+        // 后处理合并相关DOM元素
+        var postMergeBtn = document.getElementById('postMergeBtn');
         
         // 事件监听器
         uploadArea.addEventListener('click', function() { fileInput.click(); });
@@ -556,6 +629,33 @@
         fileInput.addEventListener('change', function() {
             if (fileInput.files.length) {
                 handleFileSelection(fileInput.files[0]);
+            }
+        });
+        
+        // 子表上传事件监听器
+        subTableUploadArea.addEventListener('click', function() { subTableFileInput.click(); });
+        
+        subTableUploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            subTableUploadArea.classList.add('dragover');
+        });
+        
+        subTableUploadArea.addEventListener('dragleave', function() {
+            subTableUploadArea.classList.remove('dragover');
+        });
+        
+        subTableUploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            subTableUploadArea.classList.remove('dragover');
+            
+            if (e.dataTransfer.files.length) {
+                handleSubTableSelection(e.dataTransfer.files[0]);
+            }
+        });
+        
+        subTableFileInput.addEventListener('change', function() {
+            if (subTableFileInput.files.length) {
+                handleSubTableSelection(subTableFileInput.files[0]);
             }
         });
         
@@ -588,10 +688,33 @@
         
         // 导出按钮事件
         document.getElementById('exportAllBtn').addEventListener('click', exportAllPages);
+        document.getElementById('exportMergedBtn').addEventListener('click', exportMergedData);
         document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
         
         // 重新处理按钮事件
         document.getElementById('reprocessBtn').addEventListener('click', reprocessData);
+        
+
+        
+        document.getElementById('postMergeBtn').addEventListener('click', function() {
+            // 创建一个隐藏的文件输入元素用于选择子表文件
+            var tempInput = document.createElement('input');
+            tempInput.type = 'file';
+            tempInput.accept = '.xlsx,.xls';
+            tempInput.onchange = function(event) {
+                var file = event.target.files[0];
+                if (file) {
+                    // 直接调用合并功能
+                    subTableFile = file;
+                    postMergeTables();
+                }
+            };
+            tempInput.click();
+        });
+        
+        // 全局变量，用于存储当前选择的文件
+        var selectedFile = null;
+        var subTableFile = null;
         
         // 处理文件选择
         function handleFileSelection(file) {
@@ -599,6 +722,9 @@
                 showError('请选择有效的Excel文件 (.xlsx 或 .xls)');
                 return;
             }
+            
+            // 保存选择的文件到全局变量
+            selectedFile = file;
             
             // 保存基础文件名（去掉扩展名）
             baseFileName = file.name.replace(/\.[^.]*$/, '');
@@ -609,6 +735,9 @@
             // 显示约束值控制
             var constraintControl = document.getElementById('constraintControl');
             constraintControl.classList.remove('hidden');
+            
+            // 显示合并部分
+            mergeSection.style.display = 'block';
             
             // 生成下拉选项
             var maxConstraintSelect = document.getElementById('maxConstraint');
@@ -627,11 +756,29 @@
             resetBtn.classList.remove('hidden');
         }
         
+        // 处理子表选择
+        function handleSubTableSelection(file) {
+            if (!file.name.match(/\.(xlsx|xls)$/i)) {
+                showError('请选择有效的Excel文件 (.xlsx 或 .xls)');
+                return;
+            }
+            
+            // 保存子表文件到全局变量
+            subTableFile = file;
+            
+            subTableFileInfo.textContent = '已选择子表: ' + file.name + ' (' + (file.size / 1024).toFixed(2) + ' KB)';
+            subTableFileInfo.classList.remove('hidden');
+            
+            // 启用合并按钮
+            mergeBtn.disabled = false;
+        }
+        
         // 处理文件
         function processFile() {
-            if (!fileInput.files.length) return;
+            // 检查是否有选择的文件（通过拖拽或点击选择）
+            var file = selectedFile || (fileInput.files.length > 0 ? fileInput.files[0] : null);
             
-            var file = fileInput.files[0];
+            if (!file) return;
             
             // 获取用户选择的约束值
             maxConstraint = parseInt(document.getElementById('maxConstraint').value);
@@ -647,8 +794,8 @@
                     var data = new Uint8Array(e.target.result);
                     var workbook = XLSX.read(data, { type: 'array' });
                     
-                    // 读取第一个工作表
-                    var firstSheetName = workbook.SheetNames[0];
+                    // 读取第一个工作表（对于主表处理）- 这是修复的关键部分
+                    var firstSheetName = workbook.SheetNames[0];  // 改为[0]而不是[1]
                     var worksheet = workbook.Sheets[firstSheetName];
                     
                     // 转换为JSON
@@ -656,6 +803,11 @@
                     
                     // 处理数据
                     processData(jsonData);
+                    
+                    // 如果有子表，则执行合并
+                    if (subTableFile) {
+                        mergeTables();
+                    }
                     
                     // 显示结果
                     showResults();
@@ -669,6 +821,342 @@
             };
             
             reader.readAsArrayBuffer(file);
+        }
+        
+        // 合并表格功能
+        function mergeTables() {
+            if (!processedData) {
+                showError('请先处理主表');
+                return;
+            }
+            
+            if (!subTableFile) {
+                showError('请选择子表文件');
+                return;
+            }
+            
+            var reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // 读取第一个工作表
+                    var firstSheetName = workbook.SheetNames[0];
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // 转换为JSON
+                    var subTableJsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                    
+                    // 规范化子表数据
+                    subTableData = normalizeSubTable(subTableJsonData);
+                    
+                    // 执行合并
+                    mergedData = mergeDataInternal(processedData, subTableData);
+                    
+                    // 更新界面状态
+                    document.getElementById('mergeStatus').textContent = '✅ 完成';
+                    document.getElementById('mergedCount').textContent = mergedData.length;
+                    document.getElementById('exportMergedBtn').disabled = false;
+                    
+                    // 更新合并后数据预览
+                    displayMergedDataPreview(mergedData);
+                    
+                    // 显示成功消息
+                    alert('表格合并成功！');
+                } catch (error) {
+                    showError('合并表格时出错: ' + error.message);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('读取子表文件时出错');
+            };
+            
+            reader.readAsArrayBuffer(subTableFile);
+        }
+        
+        // 合并表格功能
+        function mergeTables() {
+            if (!processedData) {
+                showError('请先处理主表');
+                return;
+            }
+            
+            if (!subTableFile) {
+                showError('请选择子表文件');
+                return;
+            }
+            
+            var reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // 读取第二个工作表（索引为1）- 这是包含code、gtime、value的表
+                    if (workbook.SheetNames.length < 2) {
+                        throw new Error('子表必须至少有两个工作表，合并数据应在第二个工作表中');
+                    }
+                    
+                    var secondSheetName = workbook.SheetNames[1]; // 第二个工作表
+                    var worksheet = workbook.Sheets[secondSheetName];
+                    
+                    // 转换为JSON
+                    var subTableJsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                    
+                    if (!subTableJsonData || subTableJsonData.length === 0) {
+                        throw new Error('子表第二个工作表中没有数据');
+                    }
+                    
+                    // 规范化子表数据
+                    subTableData = normalizeSubTable(subTableJsonData);
+                    
+                    // 执行合并
+                    mergedData = mergeDataInternal(processedData, subTableData);
+                    
+                    // 重要：合并完成后，重新计算分页并刷新显示
+                    pages = splitIntoPagesByCategoryPriority(mergedData, '涨停原因', maxConstraint);
+                    
+                    // 更新界面状态
+                    document.getElementById('mergeStatus').textContent = '✅ 完成';
+                    document.getElementById('mergedCount').textContent = mergedData.length;
+                    document.getElementById('exportMergedBtn').disabled = false;
+                    
+                    // 更新合并后数据预览
+                    displayMergedDataPreview(mergedData);
+                    
+                    // 重新显示结果以更新分页视图
+                    showResults();
+                    
+                    // 显示成功消息
+                    alert('表格合并成功！');
+                } catch (error) {
+                    showError('合并表格时出错: ' + error.message);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('读取子表文件时出错');
+            };
+            
+            reader.readAsArrayBuffer(subTableFile);
+        }
+        
+        // 规范化子表数据
+        function normalizeSubTable(data) {
+            if (!data || data.length === 0) {
+                return [];
+            }
+            
+            // 首先检查表头是否规范
+            var firstRow = data[0];
+            var columns = Object.keys(firstRow);
+            
+            // 检查是否已经有规范的列名
+            var hasCode = columns.some(col => col.toLowerCase().includes('code') || col.toLowerCase() === 'code');
+            var hasGtime = columns.some(col => col.toLowerCase().includes('gtime') || col.toLowerCase() === 'gtime');
+            var hasValue = columns.some(col => col.toLowerCase().includes('value') || col.toLowerCase() === 'value');
+            
+            // 如果表头已经规范，则直接处理
+            if (hasCode && hasGtime && hasValue) {
+                var codeCol = findColumn(data, 'code');
+                var gtimeCol = findColumn(data, 'gtime');
+                var valueCol = findColumn(data, 'value');
+            } else {
+                // 如果表头不规范，尝试查找最接近的列
+                var codeCol = findColumn(data, 'code') || findColumnByPattern(data, ['代码', 'code', 'id', '股票代码', 'stock']);
+                var gtimeCol = findColumn(data, 'gtime') || findColumnByPattern(data, ['时间', 'gtime', 'date', 'datetime', 'gmt']);
+                var valueCol = findColumn(data, 'value') || findColumnByPattern(data, ['값', 'value', '数值', '金额', 'price']);
+                
+                // 如果仍然找不到关键列，则抛出错误
+                if (!codeCol || !gtimeCol || !valueCol) {
+                    // 尝试使用位置来识别列（第一列是code，第二列是gtime，第三列是value）
+                    if (columns.length >= 3) {
+                        codeCol = columns[0];
+                        gtimeCol = columns[1];
+                        valueCol = columns[2];
+                        console.log('使用位置来识别列：', codeCol, gtimeCol, valueCol);
+                    } else {
+                        throw new Error('子表中未找到必需的列: code, gtime, value 或无法推断的列');
+                    }
+                }
+            }
+            
+            // 创建规范化数据
+            var normalizedResult = [];
+            for (var i = 0; i < data.length; i++) {
+                var row = data[i];
+                var normalizedRow = {};
+                
+                // 只复制三个关键数据到标准化列
+                normalizedRow['code'] = row[codeCol];
+                normalizedRow['gtime'] = row[gtimeCol];
+                normalizedRow['value'] = row[valueCol];
+                
+                normalizedResult.push(normalizedRow);
+            }
+            
+            return normalizedResult;
+        }
+
+        // 根据模式查找列
+        function findColumnByPattern(data, patterns) {
+            if (data.length === 0) return null;
+            
+            var firstRow = data[0];
+            var columns = Object.keys(firstRow);
+            
+            for (var i = 0; i < patterns.length; i++) {
+                var pattern = patterns[i];
+                for (var j = 0; j < columns.length; j++) {
+                    var col = columns[j];
+                    if (col.toLowerCase().includes(pattern.toLowerCase())) {
+                        return col;
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        // 处理后子表选择
+        function handlePostSubTableSelection(file) {
+            if (!file.name.match(/\.(xlsx|xls)$/i)) {
+                showError('请选择有效的Excel文件 (.xlsx 或 .xls)');
+                return;
+            }
+            
+            // 保存子表文件到全局变量
+            subTableFile = file;
+            
+            postSubTableFileInfo.textContent = '已选择子表: ' + file.name + ' (' + (file.size / 1024).toFixed(2) + ' KB)';
+            postSubTableFileInfo.classList.remove('hidden');
+            
+            // 启用合并按钮
+            postMergeBtn.disabled = false;
+        }
+        
+        // 处理后合并表格功能
+        function postMergeTables() {
+            if (!processedData) {
+                showError('主表尚未处理完成');
+                return;
+            }
+            
+            if (!subTableFile) {
+                showError('请选择子表文件');
+                return;
+            }
+            
+            var reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // 读取第一个工作表（通常包含code、gtime、value的表）
+                    var firstSheetName = workbook.SheetNames[0]; // 第一个工作表
+                    var worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // 转换为JSON
+                    var subTableJsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+                    
+                    if (!subTableJsonData || subTableJsonData.length === 0) {
+                        throw new Error('子表中没有数据');
+                    }
+                    
+                    // 规范化子表数据
+                    subTableData = normalizeSubTable(subTableJsonData);
+                    
+                    // 执行合并
+                    mergedData = mergeDataInternal(processedData, subTableData);
+                    
+                    // 重要：合并完成后，重新计算分页并刷新显示
+                    pages = splitIntoPagesByCategoryPriority(mergedData, '涨停原因', maxConstraint);
+                    
+                    // 更新界面状态
+                    document.getElementById('mergeStatus').textContent = '✅ 完成';
+                    document.getElementById('mergedCount').textContent = mergedData.length;
+                    document.getElementById('exportMergedBtn').disabled = false;
+                    
+                    // 更新合并后数据预览
+                    displayMergedDataPreview(mergedData);
+                    
+                    // 重新显示结果以更新分页视图
+                    showResults();
+                    
+                    // 显示成功消息
+                    alert('表格合并成功！');
+                } catch (error) {
+                    showError('合并表格时出错: ' + error.message);
+                }
+            };
+            
+            reader.onerror = function() {
+                showError('读取子表文件时出错');
+            };
+            
+            reader.readAsArrayBuffer(subTableFile);
+        }
+        
+        // 内部合并函数
+        function mergeDataInternal(mainTable, subTable) {
+            // 创建子表的映射，以code为键
+            var subTableMap = {};
+            for (var i = 0; i < subTable.length; i++) {
+                var code = subTable[i]['code'];
+                // 提取前6位作为键
+                var key = code ? String(code).substring(0, 6) : '';
+                // 如果code包含点号，如"000657.SZ"，则提取前面的部分
+                if (typeof code === 'string' && code.includes('.')) {
+                    key = code.split('.')[0];
+                }
+                subTableMap[key] = subTable[i];
+            }
+            
+            // 合并表格
+            var result = [];
+            for (var i = 0; i < mainTable.length; i++) {
+                var mainRow = mainTable[i];
+                var newRow = {...mainRow};
+                
+                // 获取主表的股票代码前6位
+                var stockCode = mainRow['股票代码'] || mainRow['证券代码'] || mainRow['代码'];
+                if (stockCode) {
+                    // 提取前6位
+                    var key = String(stockCode).substring(0, 6);
+                    // 如果在SZ或SH后有.，则可能是"000657.SZ"格式，需要特殊处理
+                    if (typeof stockCode === 'string' && stockCode.includes('.')) {
+                        key = stockCode.split('.')[0];
+                    }
+                    
+                    // 如果在子表中找到匹配项，则合并数据
+                    if (subTableMap[key]) {
+                        var subRow = subTableMap[key];
+                        // 合并gtime和value字段
+                        newRow['子表涨停时间'] = subRow['gtime'] || '';
+                        newRow['子表value'] = subRow['value'] || '';  // 修改字段名
+                        
+                        // 添加其他子表字段（如果有）
+                        for (var subKey in subRow) {
+                            if (subRow.hasOwnProperty(subKey) && 
+                                subKey !== 'code' && 
+                                subKey !== 'gtime' && 
+                                subKey !== 'value') {
+                                newRow['子表_' + subKey] = subRow[subKey];
+                            }
+                        }
+                    }
+                }
+                
+                result.push(newRow);
+            }
+            
+            return result;
         }
         
         // 数据处理主函数
@@ -726,6 +1214,17 @@
                 newRow['涨停原因'] = row[limitReasonCol];
                 newRow['涨停原因类别'] = row[limitReasonCategoryCol];
                 
+                // 检查是否存在股票代码字段，如果没有则尝试从其他可能的字段获取
+                if (!newRow['股票代码'] && newRow[key]) {
+                    // 尝试查找可能表示股票代码的字段
+                    for (var k in newRow) {
+                        if (k.indexOf('代码') !== -1 || k.indexOf('Code') !== -1 || k.indexOf('code') !== -1) {
+                            newRow['股票代码'] = newRow[k];
+                            break;
+                        }
+                    }
+                }
+                
                 renamedData.push(newRow);
             }
             
@@ -738,6 +1237,9 @@
             processedData = sortData(processedData);
             
             // 6. 分页处理
+            // 初始化跨页信息为空数组
+            window.crossPageInfo = [];
+            
             pages = splitIntoPagesByCategoryPriority(processedData, '涨停原因', maxConstraint);
             
             // 7. 统计类别
@@ -976,9 +1478,13 @@
                 reorderedData.push(otherConceptData[i]);
             }
             
-            // 按约束条件进行分页
+            // 按约束条件进行分页，并检测跨页情况
             var pages = [];
+            var crossPageInfo = []; // 存储跨页信息
             var i = 0;
+            
+            // 跟踪每个类别出现在哪些页面中
+            var categoryPageMap = {};
             
             while (i < reorderedData.length) {
                 var j = i;
@@ -1009,6 +1515,53 @@
                     j = i + 1;
                 }
                 
+                // 记录当前页面的索引（从1开始）
+                var currentPageIndex = pages.length + 1;
+                
+                // 添加调试信息
+                console.log('处理第' + currentPageIndex + '页，数据范围: ' + i + ' 到 ' + (j-1));
+                
+                // 显示当前页面包含的所有类别
+                var currentPageCategories = {};
+                for (var k = i; k < j; k++) {
+                    var category = reorderedData[k][categoryCol];
+                    if (!currentPageCategories.hasOwnProperty(category)) {
+                        currentPageCategories[category] = 0;
+                    }
+                    currentPageCategories[category]++;
+                }
+                console.log('第' + currentPageIndex + '页包含的类别:', currentPageCategories);
+                
+                // 先检查当前页面中的类别是否已在之前的页面中出现
+                for (var k = i; k < j; k++) {
+                    var category = reorderedData[k][categoryCol];
+                    
+                    // 如果这个类别之前出现过，记录跨页信息
+                    if (categoryPageMap.hasOwnProperty(category)) {
+                        // 检查是否是相邻页面，避免重复记录
+                        if (!categoryPageMap[category].includes(currentPageIndex)) {
+                            crossPageInfo.push({
+                                category: category,
+                                fromPage: Math.max(...categoryPageMap[category]),
+                                toPage: currentPageIndex
+                            });
+                            
+                            // 调试输出
+                            console.log('检测到跨页: ' + category + ' 从第' + Math.max(...categoryPageMap[category]) + '页到第' + currentPageIndex + '页');
+                        }
+                    }
+                }
+                
+                // 然后更新类别页面映射
+                for (var k = i; k < j; k++) {
+                    var category = reorderedData[k][categoryCol];
+                    
+                    if (!categoryPageMap.hasOwnProperty(category)) {
+                        categoryPageMap[category] = [];
+                    }
+                    categoryPageMap[category].push(currentPageIndex);
+                }
+                
                 var page = [];
                 for (var k = i; k < j; k++) {
                     page.push(reorderedData[k]);
@@ -1016,6 +1569,10 @@
                 pages.push(page);
                 i = j;
             }
+            
+            // 将跨页信息存储到全局变量中，以便在显示结果时使用
+            window.crossPageInfo = crossPageInfo;
+            console.log('在splitIntoPagesByCategoryPriority中设置window.crossPageInfo:', crossPageInfo);
             
             return pages;
         }
@@ -1057,10 +1614,23 @@
             processingSection.classList.add('hidden');
             resultsSection.classList.remove('hidden');
             
+            // 使用合并后的数据进行显示，如果存在的话
+            var displayData = mergedData && mergedData.length > 0 ? mergedData : processedData;
+            
             // 更新统计信息
-            document.getElementById('recordCount').textContent = processedData.length;
+            document.getElementById('recordCount').textContent = displayData.length;
+            // 重新计算分页（如果存在合并数据）
+            if (mergedData && mergedData.length > 0) {
+                pages = splitIntoPagesByCategoryPriority(mergedData, '涨停原因', maxConstraint);
+            }
             document.getElementById('pageCount').textContent = pages.length;
             document.getElementById('categoryCount').textContent = categoryStats.length;
+            document.getElementById('mergedCount').textContent = mergedData ? mergedData.length : 0;
+            
+            if (mergedData) {
+                document.getElementById('exportMergedBtn').disabled = false;
+                document.getElementById('mergeStatus').textContent = '✅ 完成';
+            }
             
             // 更新列信息
             document.getElementById('finalLimitTimeCol').textContent = window.columnInfo.finalLimitTimeCol;
@@ -1072,7 +1642,7 @@
             initReprocessControl();
             
             // 定义预览时需要显示的字段（使用模糊匹配应对编码问题）
-            var previewFields = ['股票简称', '最终涨停时间', '连续涨停天数(天)', '涨停原因', '涨停原因类别'];
+            var previewFields = ['股票简称', '最终涨停时间', '连续涨停天数(天)', '涨停原因', '涨停原因类别', '股票代码', '子表value'];
             
             // 检查字段是否匹配预览字段
             function isPreviewField(fieldName) {
@@ -1108,7 +1678,7 @@
                 tabContent.className = 'tab-content' + (index === 0 ? ' active' : '');
                 tabContent.id = 'page-' + index;
                 
-                // 构建表头
+                // 构建表头 - 包含子表value字段
                 var headerKeys = [];
                 if (page.length > 0) {
                     for (var key in page[0]) {
@@ -1134,7 +1704,8 @@
                     for (var c = 0; c < headerKeys.length; c++) {
                         var key = headerKeys[c];
                         // 为每个单元格创建可编辑的输入框
-                        rowHtml += '<td><input type="text" value="' + (row[key] || '') + '" data-row="' + r + '" data-col="' + key + '" style="width:100%;box-sizing:border-box;"></td>';
+                        var cellValue = row[key] || '';
+                        rowHtml += '<td><input type="text" value="' + escapeHtml(cellValue) + '" data-row="' + r + '" data-col="' + key + '" style="width:100%;box-sizing:border-box;"></td>';
                     }
                     rowHtml += '</tr>';
                     tableBodyHtml += rowHtml;
@@ -1160,6 +1731,59 @@
             // 将标签页和内容添加到页面中
             var pagesContainer = document.getElementById('pagesContainer');
             pagesContainer.innerHTML = '';
+            
+            // 添加跨页信息显示区域
+            var crossPageInfoDiv = document.createElement('div');
+            crossPageInfoDiv.className = 'alert';
+            crossPageInfoDiv.style.backgroundColor = '#d4edda';
+            crossPageInfoDiv.style.borderColor = '#c3e6cb';
+            crossPageInfoDiv.style.padding = '15px';
+            crossPageInfoDiv.style.marginBottom = '20px';
+            crossPageInfoDiv.style.border = '1px solid transparent';
+            crossPageInfoDiv.style.borderRadius = '4px';
+            
+            var crossPageInfoTitle = document.createElement('h4');
+            crossPageInfoTitle.style.marginTop = '0';
+            
+            if (window.crossPageInfo && window.crossPageInfo.length > 0) {
+                // 有跨页情况
+                crossPageInfoTitle.textContent = '检测到跨页情况';
+                crossPageInfoDiv.style.backgroundColor = '#fff3cd';
+                crossPageInfoDiv.style.borderColor = '#ffeaa7';
+                
+                var crossPageInfoList = document.createElement('ul');
+                crossPageInfoList.style.marginBottom = '0';
+                
+                // 去重并显示跨页信息
+                var uniqueCrossPageInfo = {};
+                for (var i = 0; i < window.crossPageInfo.length; i++) {
+                    var info = window.crossPageInfo[i];
+                    var key = info.category + '|' + info.fromPage + '|' + info.toPage;
+                    uniqueCrossPageInfo[key] = info;
+                }
+                
+                for (var key in uniqueCrossPageInfo) {
+                    if (uniqueCrossPageInfo.hasOwnProperty(key)) {
+                        var info = uniqueCrossPageInfo[key];
+                        var listItem = document.createElement('li');
+                        listItem.textContent = info.category + ': 从第' + info.fromPage + '页末尾到第' + info.toPage + '页顶端';
+                        crossPageInfoList.appendChild(listItem);
+                    }
+                }
+                
+                crossPageInfoDiv.appendChild(crossPageInfoTitle);
+                crossPageInfoDiv.appendChild(crossPageInfoList);
+            } else {
+                // 没有跨页情况
+                crossPageInfoTitle.textContent = '分页结果';
+                var noCrossPageText = document.createElement('p');
+                noCrossPageText.textContent = '没有检测到跨页情况';
+                noCrossPageText.style.marginBottom = '0';
+                crossPageInfoDiv.appendChild(crossPageInfoTitle);
+                crossPageInfoDiv.appendChild(noCrossPageText);
+            }
+            
+            pagesContainer.appendChild(crossPageInfoDiv);
             pagesContainer.appendChild(tabsContainer);
             pagesContainer.appendChild(tabContentsContainer);
             
@@ -1193,13 +1817,20 @@
             var categoriesTableBody = document.querySelector('#categoriesTable tbody');
             categoriesTableBody.innerHTML = '';
             
-            for (var s = 0; s < categoryStats.length; s++) {
-                var stat = categoryStats[s];
+            // 使用显示数据计算类别统计
+            var displayCategoryStats = getCategoryStats(displayData);
+            for (var s = 0; s < displayCategoryStats.length; s++) {
+                var stat = displayCategoryStats[s];
                 var row = document.createElement('tr');
                 row.innerHTML = 
                     '<td>' + stat.category + '</td>' +
                     '<td>' + stat.count + '</td>';
                 categoriesTableBody.appendChild(row);
+            }
+            
+            // 显示合并后的数据预览（如果存在）
+            if (mergedData) {
+                displayMergedDataPreview(mergedData);
             }
             
             // 默认显示分页结果标签页（根据规范）
@@ -1216,6 +1847,121 @@
             
             document.querySelector('.tab[data-tab="main-pages"]').classList.add('active');
             document.getElementById('main-pagesTab').classList.add('active');
+            
+            // 确保上传子表按钮可用
+            document.getElementById('postMergeBtn').disabled = false;
+        }
+        
+        // 转义HTML特殊字符的辅助函数
+        function escapeHtml(unsafe) {
+            if (unsafe === null || unsafe === undefined) {
+                return '';
+            }
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        
+        // 重新处理数据
+        function reprocessData() {
+            // 获取新的约束值
+            var newMaxConstraint = parseInt(document.getElementById('resultMaxConstraint').value);
+            
+            // 如果约束值没有改变，则不重新处理
+            if (newMaxConstraint === maxConstraint) {
+                return;
+            }
+            
+            // 更新约束值
+            maxConstraint = newMaxConstraint;
+            
+            // 显示处理中界面
+            processingSection.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+            
+            // 使用setTimeout确保UI更新后再进行处理
+            setTimeout(function() {
+                try {
+                    // 如果存在合并数据，则对合并后的数据进行分页处理
+                    if (mergedData && mergedData.length > 0) {
+                        pages = splitIntoPagesByCategoryPriority(mergedData, '涨停原因', maxConstraint);
+                    } else {
+                        // 否则对原始处理后的数据进行分页
+                        pages = splitIntoPagesByCategoryPriority(processedData, '涨停原因', maxConstraint);
+                    }
+                    
+                    // 重新统计类别
+                    var displayData = mergedData && mergedData.length > 0 ? mergedData : processedData;
+                    categoryStats = getCategoryStats(displayData);
+                    
+                    // 显示结果
+                    showResults();
+                } catch (error) {
+                    showError('重新处理时出错: ' + error.message);
+                }
+            }, 100);
+        }
+        
+        // 显示合并后数据预览
+        function displayMergedDataPreview(data) {
+            var headerElement = document.getElementById('mergedHeader');
+            var bodyElement = document.getElementById('mergedDataBody');
+            
+            if (!data || data.length === 0) {
+                headerElement.innerHTML = '<th>无数据</th>';
+                bodyElement.innerHTML = '<tr><td>无数据可显示</td></tr>';
+                return;
+            }
+            
+            // 清空现有内容
+            headerElement.innerHTML = '';
+            bodyElement.innerHTML = '';
+            
+            // 创建表头 - 包含股票代码和value字段
+            var columns = Object.keys(data[0]);
+            for (var j = 0; j < columns.length; j++) {
+                var th = document.createElement('th');
+                th.textContent = columns[j];
+                headerElement.appendChild(th);
+            }
+            
+            // 创建表体（限制行数）
+            var rowsToShow = Math.min(10, data.length);
+            for (var i = 0; i < rowsToShow; i++) {
+                var row = data[i];
+                var tr = document.createElement('tr');
+                
+                for (var j = 0; j < columns.length; j++) {
+                    var td = document.createElement('td');
+                    // 使单元格可编辑
+                    var input = document.createElement('input');
+                    input.type = 'text';
+                    input.value = row[columns[j]] || '';
+                    input.style.width = '100%';
+                    input.style.boxSizing = 'border-box';
+                    input.dataset.row = i;
+                    input.dataset.col = columns[j];
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                }
+                
+                bodyElement.appendChild(tr);
+            }
+            
+            // 如果数据被截断，添加提示
+            if (data.length > rowsToShow) {
+                var tr = document.createElement('tr');
+                var td = document.createElement('td');
+                td.setAttribute('colspan', columns.length);
+                td.style.textAlign = 'center';
+                td.style.fontStyle = 'italic';
+                td.textContent = `... 还有 ${data.length - rowsToShow} 行数据未显示 ...`;
+                tr.appendChild(td);
+                bodyElement.appendChild(tr);
+            }
         }
         
         // 保存页面修改的函数
@@ -1245,7 +1991,7 @@
         
         // 导出所有分页文件
         function exportAllPages() {
-            // 创建修改后的页面数据副本
+            // 使用当前的分页数据（如果是合并后的数据，则使用合并后的分页）
             var modifiedPages = JSON.parse(JSON.stringify(pages));
             
             // 应用所有保存的修改
@@ -1269,7 +2015,7 @@
             
             for (var index = 0; index < modifiedPages.length; index++) {
                 var page = modifiedPages[index];
-                // 过滤掉'涨停原因揭秘'字段（支持模糊匹配）
+                // 过滤掉'涨停原因揭秘'字段（支持模糊匹配），但保留所有其他字段包括子表value
                 var filteredPage = [];
                 for (var i = 0; i < page.length; i++) {
                     var row = page[i];
@@ -1286,11 +2032,26 @@
                 
                 var worksheet = XLSX.utils.json_to_sheet(filteredPage);
                 var workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, '第1页');
+                XLSX.utils.book_append_sheet(workbook, worksheet, '第' + (index + 1) + '页');
                 
                 // 导出文件，使用基于原始文件名的格式
                 XLSX.writeFile(workbook, baseFileName + '_第' + (index + 1) + '页.xlsx');
             }
+        }
+        
+        // 导出合并后数据
+        function exportMergedData() {
+            if (!mergedData) {
+                alert('没有可导出的合并数据');
+                return;
+            }
+            
+            var worksheet = XLSX.utils.json_to_sheet(mergedData);
+            var workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, '合并后数据');
+            
+            // 导出文件，使用基于原始文件名的格式
+            XLSX.writeFile(workbook, baseFileName + '_合并后数据.xlsx');
         }
         
         // 导出CSV统计文件
@@ -1309,8 +2070,15 @@
                 csvString += csvContent[j].join(',') + '\n';
             }
             
+            // 获取当前日期并格式化为 YYYYMMDD
+            var now = new Date();
+            var year = now.getFullYear();
+            var month = (now.getMonth() + 1).toString().padStart(2, '0');
+            var day = now.getDate().toString().padStart(2, '0');
+            var dateString = year + month + day;
+            
             var blob = new Blob(['\ufeff' + csvString], { type: 'text/csv;charset=utf-8;' });
-            saveAs(blob, '涨停原因统计.csv');
+            saveAs(blob, '今日涨停非ST-' + dateString + '_涨停原因统计.csv');
         }
         
         // 显示错误信息
@@ -1324,6 +2092,7 @@
         function resetApp() {
             // 重置文件输入
             fileInput.value = '';
+            subTableFileInput.value = '';
             
             // 重置界面
             document.querySelector('.card:first-child').classList.remove('hidden');
@@ -1334,14 +2103,21 @@
             // 重置状态
             fileInfo.classList.add('hidden');
             fileInfo.textContent = '';
+            subTableFileInfo.classList.add('hidden');
+            subTableFileInfo.textContent = '';
             document.getElementById('constraintControl').classList.add('hidden');
+            mergeSection.style.display = 'none';
             processBtn.disabled = true;
+            mergeBtn.disabled = true;
             resetBtn.classList.add('hidden');
             
             // 重置数据
             processedData = null;
             pages = [];
             categoryStats = [];
+            subTableData = null;
+            mergedData = null;
+            baseFileName = '';
             maxConstraint = 33; // 重置为默认值
         }
         
@@ -1360,40 +2136,6 @@
                 }
                 resultMaxConstraintSelect.appendChild(option);
             }
-        }
-        
-        // 重新处理数据
-        function reprocessData() {
-            // 获取新的约束值
-            var newMaxConstraint = parseInt(document.getElementById('resultMaxConstraint').value);
-            
-            // 如果约束值没有改变，则不重新处理
-            if (newMaxConstraint === maxConstraint) {
-                return;
-            }
-            
-            // 更新约束值
-            maxConstraint = newMaxConstraint;
-            
-            // 显示处理中界面
-            processingSection.classList.remove('hidden');
-            resultsSection.classList.add('hidden');
-            
-            // 使用setTimeout确保UI更新后再进行处理
-            setTimeout(function() {
-                try {
-                    // 重新分页处理
-                    pages = splitIntoPagesByCategoryPriority(processedData, '涨停原因', maxConstraint);
-                    
-                    // 重新统计类别
-                    categoryStats = getCategoryStats(processedData);
-                    
-                    // 显示结果
-                    showResults();
-                } catch (error) {
-                    showError('重新处理时出错: ' + error.message);
-                }
-            }, 100);
         }
     </script>
 </body>
